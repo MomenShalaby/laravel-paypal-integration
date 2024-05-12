@@ -22,9 +22,9 @@ class PaymentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // 'product_name' => 'nullable|string',
-            // 'quantity' => 'nullable|numeric',
-            // 'amount' => 'required|numeric',
+            'product_name' => 'nullable|string',
+            'quantity' => 'nullable|numeric',
+            'price' => 'required|numeric',
         ];
     }
 }

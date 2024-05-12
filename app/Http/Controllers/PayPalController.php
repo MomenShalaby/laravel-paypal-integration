@@ -3,12 +3,22 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\PaymentRequest;
 use App\Models\Payment;
+use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Srmklive\PayPal\Services\PayPal as PayPalClient;
 
 class PayPalController extends Controller
 {
+    private $provider;
+    public function __construct()
+    {
+        $this->provider = $this->initializePayPalClient();
+
+    }
+
     /**
      * create transaction.
      *
@@ -18,45 +28,33 @@ class PayPalController extends Controller
     {
         return response(view('transaction'));
     }
+
+
     /**
      * process transaction.
      *
      * @return \Illuminate\Http\Response
      */
-    public function processTransaction(Request $request)
+    public function processTransactionPaypalRedirect(Request $request)
     {
-        $provider = new PayPalClient;
-        $provider->setApiCredentials(config('paypal'));
-        $provider->getAccessToken();
-        $response = $provider->createOrder([
-            "intent" => "CAPTURE",
-            "application_context" => [
-                "return_url" => route('successTransaction'),
-                "cancel_url" => route('cancelTransaction'),
-            ],
-            "purchase_units" => [
-                [
-                    "amount" => [
-                        "currency_code" => "USD",
-                        "value" => $request->price
-                    ]
-                ]
-            ]
-        ]);
-        if (isset($response['id']) && $response['id'] != null) {
-            foreach ($response['links'] as $links) {
-                if ($links['rel'] == 'approve') {
-                    session()->put('product_name', $request->product_name);
-                    session()->put('quantity', $request->quantity);
-                    return redirect()->away($links['href']);
+        $order = $this->createPaypalOrder($request);
+
+        if ($order['status'] == 'CREATED') {
+            foreach ($order['links'] as $link) {
+                if ($link['rel'] == 'approve') {
+                    return redirect()->away($link['href']);
                 }
             }
-            return redirect()
-                ->route('createTransaction');
+
         } else {
             return redirect()
                 ->route('cancelTransaction');
         }
+    }
+    public function processTransactionPaypalButton(Request $request)
+    {
+        $order = $this->createPaypalOrder($request);
+        return response()->json($order);
     }
 
 
@@ -65,36 +63,23 @@ class PayPalController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function successTransaction(Request $request)
+    public function successTransactionButton(Request $request)
+    {
+        $data = json_decode($request->getContent(), true);
+        $orderId = $data['orderId'];
+
+        $result = $this->capturePaypalPayment($orderId);
+        return response()->json($result);
+
+    }
+    public function successTransactionRedirect(Request $request)
     {
 
-        $provider = new PayPalClient;
-        $provider->setApiCredentials(config('paypal'));
-        $provider->getAccessToken();
-        $response = $provider->capturePaymentOrder($request->token);
-        if (isset($response['status']) && $response['status'] == 'COMPLETED') {
+        $orderId = $request->token;
 
-            $payment = new Payment;
-            $payment->payment_id = $response['id'];
-            $payment->product_name = session()->get('product_name');
-            $payment->quantity = session()->get('quantity');
-            $payment->amount = $response['purchase_units'][0]['payments']['captures'][0]['amount']['value'];
-            $payment->currency = $response['purchase_units'][0]['payments']['captures'][0]['amount']['currency_code'];
-            $payment->payer_name = $response['payer']['name']['given_name'];
-            $payment->payer_email = $response['payer']['email_address'];
-            $payment->payment_status = $response['status'];
-            $payment->payment_method = "PayPal";
-            $payment->save();
-
-
-
-            return redirect()
-                ->route('success');
-        } else {
-            return redirect()
-                ->route('createTransaction')
-                ->with('error', 'Something went wrong.');
-        }
+        $result = $this->capturePaypalPayment($orderId);
+        return redirect()
+            ->route('success');
     }
     /**
      * cancel transaction.
@@ -106,5 +91,66 @@ class PayPalController extends Controller
         return redirect()
             ->route('createTransaction')
             ->with('error', 'Transaction Canceled.');
+    }
+
+
+
+
+    private function initializePayPalClient()
+    {
+        $provider = new PayPalClient;
+        $provider->setApiCredentials(config('paypal'));
+        $provider->getAccessToken();
+        return $provider;
+    }
+
+    private function createPaypalOrder($request)
+    {
+        $price = $request->price ?? 20;
+        $data = [
+            "intent" => "CAPTURE",
+            "application_context" => [
+                "return_url" => route('successTransactionRedirect'),
+                "cancel_url" => route('cancelTransaction'),
+            ],
+            "purchase_units" => [
+                [
+                    "amount" => [
+                        "currency_code" => "USD",
+                        "value" => $price
+                    ]
+                ]
+            ]
+        ];
+        $order = $this->provider->createOrder($data);
+        return $order;
+    }
+
+    private function capturePaypalPayment($token)
+    {
+        $response = $this->provider->capturePaymentOrder($token);
+        try {
+            DB::beginTransaction();
+
+            if ($response['status'] == 'COMPLETED') {
+                $payment = new Payment;
+                $payment->payment_id = $response['id'];
+                $payment->amount = $response['purchase_units'][0]['payments']['captures'][0]['amount']['value'];
+                $payment->currency = $response['purchase_units'][0]['payments']['captures'][0]['amount']['currency_code'];
+                $payment->payer_name = $response['payer']['name']['given_name'];
+                $payment->payer_email = $response['payer']['email_address'];
+                $payment->payment_status = $response['status'];
+                $payment->payment_method = "PayPal";
+                $payment->save();
+                DB::commit();
+
+                return $response;
+            }
+        } catch (Exception $e) {
+            DB::rollBack();
+            return $e;
+        }
+
+
     }
 }

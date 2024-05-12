@@ -8,9 +8,17 @@ Route::get('/', function () {
         ->route('createTransaction');
 })->name('home');
 
+
 Route::get('createTransaction', [PayPalController::class, 'createTransaction'])->name('createTransaction');
-Route::post('processTransaction', [PayPalController::class, 'processTransaction'])->name('processTransaction');
-Route::get('successTransaction', [PayPalController::class, 'successTransaction'])->name('successTransaction');
+
+// redirect to paypal
+Route::post('processTransactionRedirect', [PayPalController::class, 'processTransactionPaypalRedirect'])->name('processTransactionRedirect');
+Route::get('successTransactionRedirect', [PayPalController::class, 'successTransactionRedirect'])->name('successTransactionRedirect');
+
+// paypal button 
+Route::post('processTransactionButton', [PayPalController::class, 'processTransactionPaypalButton'])->name('processTransactionButton');
+Route::post('successTransactionButton', [PayPalController::class, 'successTransactionButton'])->name('successTransactionButton');
+
 Route::get('cancelTransaction', [PayPalController::class, 'cancelTransaction'])->name('cancelTransaction');
 
 Route::get('/success', function () {
