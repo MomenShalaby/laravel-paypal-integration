@@ -38,7 +38,7 @@ class PayPalController extends Controller
     public function processTransactionPaypalRedirect(Request $request)
     {
         $order = $this->createPaypalOrder($request);
-F
+
         if ($order['status'] == 'CREATED') {
             foreach ($order['links'] as $link) {
                 if ($link['rel'] == 'approve') {
