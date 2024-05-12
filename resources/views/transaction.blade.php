@@ -264,6 +264,7 @@
 
                 // Successful capture! For demo purposes:
 
+                window.location.href = "{{ route('success') }}";
 
                 // Replace the above to show a success message within this page, e.g.
                 // const element = document.getElementById('paypal-button-container');
